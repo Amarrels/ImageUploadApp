@@ -67,11 +67,9 @@ def allowed_file(filename):
 
 # Function that uploads image to Gemini AI
 def upload_to_gemini(path, mime_type=None):
-    """Uploads the local image file to Gemini AI for processing."""
-    with open(path, "rb") as image_file:
-        img = genai.upload_file(image_file, mime_type=mime_type)
+    file = genai.upload_file(path, mime_type=mime_type)
 
-    return img  
+    return file  
 
   
 
