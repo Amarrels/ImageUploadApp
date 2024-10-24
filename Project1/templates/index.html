@@ -16,11 +16,13 @@
     <h2>Uploaded Images</h2>
     <ul>
         {% for image in images %}
-        <li><img src="/images/{{ image }}" alt="Uploaded Image" style="max-width: 200px;"><br><a href="/images/{{ image }}">{{ image }}</a></li>
-            <p>
-                Description: 
-                <a href="/images/{{ image | replace('.jpeg', '.txt') | replace('.jpg', '.txt') | replace('.png', '.txt') }}">{{ image | replace('.jpeg', '.txt') | replace('.jpg', '.txt') | replace('.png', '.txt') }}</a>
-            </p>
+            <li>
+                <img src="/images/{{ image }}" alt="Uploaded Image" style="max-width: 200px;"><br><a href="/images/{{ image }}">{{ image }}</a>
+            
+                <p>Description: 
+                    <a href="/images/{{ image | replace('.jpeg', '.txt') | replace('.jpg', '.txt') | replace('.png', '.txt') }}">{{ image | replace('.jpeg', '.txt') | replace('.jpg', '.txt') | replace('.png', '.txt') }}</a>
+                </p>
+            </li>
         {% endfor %}
     </ul>
 </body>
