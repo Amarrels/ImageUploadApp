@@ -5,28 +5,28 @@ from google.cloud import error_reporting, storage
 import google.cloud.logging
 import os
 import requests
+import google.generativeai as genai
+ 
 
-url = 'https://amarrasproject2.free.beeceptor.com'
-headers = {
-    'Authorization': 'Bearer SOME-VALUE'
-}
+#P2---------------------------------------
+#Configure service with my API key
+api_key="AIzaSyCBevaOsfLyO2MmvbS8AYwdC_gUCO1eNns"
+genai.configure(api_key=api_key)
 
-response = requests.get(url, headers=headers)
+#initialize Gemini AI model
+model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+PROMPT = 'Provide a title and description for this image. Format the response as Title: [title]\nDescription: [description]'
+#-----------------------------------------
 
-if response.status_code == 200:
-    print(response.text)
-else:
-    print(f"Request failed with status code: {response.status_code}")
-    
 # Initialize Flask app
 app = Flask(__name__)
-
 
 app.config.update(
     SECRET_KEY='your-secret-key',
     MAX_CONTENT_LENGTH=8 * 1024 * 1024,  # 8 MB max upload size
     ALLOWED_EXTENSIONS=set(['png', 'jpg', 'jpeg', 'gif'])
 )
+
 
 # Initialize Google Cloud Storage and Logging clients
 client = google.cloud.logging.Client()
@@ -53,16 +53,44 @@ def upload_image_file(img):
     # Upload the file to the bucket
     blob.upload_from_file(img, content_type=img.content_type)
 
-    # Make the blob publicly viewable and return the public URL
-    #blob.make_public()
-    #public_url = blob.public_url
-
-    #current_app.logger.info(f'Uploaded file {img.filename} to {public_url}')
     return blob.name
 
 # Check if the file extension is allowed
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+
+
+
+#P2-----------------------------------------
+
+# Function that uploads image to Gemini AI
+def upload_to_gemini(path, mime_type=None):
+    """Uploads the local image file to Gemini AI for processing."""
+    with open(path, "rb") as image_file:
+        img = genai.upload_file(image_file, mime_type=mime_type)
+
+    return img  
+
+  
+
+
+#function that uploads .txt to cloud storage
+def upload_txt_file(txt_name, content):
+    ''' 
+    Upload the Gemini AI generated text to GCS
+    '''
+    if not content:
+         return None
+   
+    bucket = storage_client.bucket(BUCKET_NAME)
+
+    txt_blob = bucket.blob(txt_name)
+    #upload content as text file
+    txt_blob.upload_from_string(content, content_type='text/plain')
+    
+    return txt_blob.name
+#-----------------------------------------
 
 
 
@@ -90,10 +118,37 @@ def upload():
         return redirect(request.url)
 
     if file and allowed_file(file.filename):
-        # Upload the image to Cloud Storage
-        image_url = upload_image_file(file)
-        if image_url:
-            flash(f'Image uploaded successfully: <a href="{image_url}">{image_url}</a>')
+        try:
+            # Upload the image to Cloud Storage
+            image_url = upload_image_file(file)
+            if image_url:
+                #get mime_type
+                mime_type = file.content_type
+                #download the image to a local temporary file for Gemini AI to access
+                temp_image_path = f"/tmp/{file.filename}"
+                file.save(temp_image_path)
+
+                #call upload to Gemini AI for description
+                img = upload_to_gemini(temp_image_path, mime_type=mime_type)
+                                
+                parts = [img, PROMPT]
+                response = model.generate_content(parts)
+
+                #generated description
+                description = response.text
+                
+                #create text file name based on the uploaded image
+                description_file_name = f"{os.path.splitext(image_url)[0]}.txt"
+                
+                #upload the description to Cloud Storage
+                upload_txt_file(description_file_name, description)
+
+                description_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{description_file_name}"
+
+                flash(f'Image uploaded successfully: <a href="{image_url}">{image_url}</a>')
+                flash(f'Description generated: {description}')
+        except Exception as e:
+            flash(f'An error occurred: {str(e)}')
         return redirect(url_for('index'))
 
     flash('Invalid file type. Please upload PNG, JPG, JPEG, or GIF images.')
@@ -101,11 +156,14 @@ def upload():
 
 @app.route('/images/<filename>')
 def get_file(filename):
+    
     bucket = storage_client.bucket(BUCKET_NAME)
 
     blob = bucket.blob(filename)
     blob.download_to_filename(filename)
+
     return send_file(filename)
+
 
 
 # Error reporting
