@@ -10,7 +10,8 @@ import google.generativeai as genai
 
 #P2---------------------------------------
 #Configure service with my API key
-api_key="AIzaSyCBevaOsfLyO2MmvbS8AYwdC_gUCO1eNns"
+#created variable in GC Run with actual key 
+api_key=os.environ.get("GEMINIKEY")
 genai.configure(api_key=api_key)
 
 #initialize Gemini AI model
