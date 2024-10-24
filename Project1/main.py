@@ -10,7 +10,7 @@ import google.generativeai as genai
 
 #P2---------------------------------------
 #Configure service with my API key
-#created variable in GC Run with actual key 
+#set environment variable and load from environmetn
 api_key=os.environ.get("GEMINIKEY")
 genai.configure(api_key=api_key)
 
@@ -41,18 +41,19 @@ BUCKET_NAME = os.environ.get('GOOGLE_STORAGE_BUCKET') or 'imageupload-bucket'
 
 
 # Google Cloud Storage Upload
-def upload_image_file(img):
+def upload_image_file(filename):
     """
     Upload the user-uploaded file to Google Cloud Storage 
     """
-    if not img:
+    if not filename:
+        print("filename is none")
         return None
 
     bucket = storage_client.bucket(BUCKET_NAME)
-    blob = bucket.blob(img.filename)
+    blob = bucket.blob(filename)
 
     # Upload the file to the bucket
-    blob.upload_from_file(img, content_type=img.content_type)
+    blob.upload_from_filename(filename)
 
     return blob.name
 
@@ -66,9 +67,8 @@ def allowed_file(filename):
 #P2-----------------------------------------
 
 # Function that uploads image to Gemini AI
-def upload_to_gemini(path, mime_type=None):
+def upload_to_gemini(path, mime_type):
     file = genai.upload_file(path, mime_type=mime_type)
-
     return file  
 
   
@@ -98,7 +98,12 @@ def upload_txt_file(txt_name, content):
 def index():
     bucket = storage_client.bucket(BUCKET_NAME)
     blobs = bucket.list_blobs()
-    image_urls = [blob.name for blob in blobs]
+    print (blobs)
+    image_urls=[]
+    for blob in blobs:
+        if blob.name.endswith('.jpg'):
+            image_urls.append(blob.name)
+  
 
     return render_template('index.html', images=image_urls)
 
@@ -118,35 +123,40 @@ def upload():
 
     if file and allowed_file(file.filename):
         try:
+            #save file locally
+            file.save(file.filename)
+
             # Upload the image to Cloud Storage
-            image_url = upload_image_file(file)
-            if image_url:
-                #get mime_type
-                mime_type = file.content_type
-                #download the image to a local temporary file for Gemini AI to access
-                temp_image_path = f"/tmp/{file.filename}"
-                file.save(temp_image_path)
+            upload_image_file(file.filename)
 
-                #call upload to Gemini AI for description
-                img = upload_to_gemini(temp_image_path, mime_type=mime_type)
-                                
-                parts = [img, PROMPT]
-                response = model.generate_content(parts)
+            #get mime_type
+            mime_type = file.content_type
+            print (mime_type)
 
-                #generated description
-                description = response.text
-                
-                #create text file name based on the uploaded image
-                description_file_name = f"{os.path.splitext(image_url)[0]}.txt"
-                
-                #upload the description to Cloud Storage
-                upload_txt_file(description_file_name, description)
+            print(file.filename)
+            #call upload to Gemini AI for description
+            img = upload_to_gemini(file.filename, mime_type=mime_type)
+            print(img) 
 
-                description_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{description_file_name}"
+            parts = [img, PROMPT]
+            response = model.generate_content(parts)
 
-                flash(f'Image uploaded successfully: <a href="{image_url}">{image_url}</a>')
-                flash(f'Description generated: {description}')
+            #generated description
+            description = response.text
+            print(description)
+
+            #create text file name based on the uploaded image
+            description_file_name = f"{os.path.splitext(file.filename)[0]}.txt"
+            
+            #upload the description to Cloud Storage
+            upload_txt_file(description_file_name, description)
+
+            description_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{description_file_name}"
+
+            flash(f'Image uploaded successfully: <a href="{image_url}">{image_url}</a>')
+            flash(f'Description generated: {description}')
         except Exception as e:
+            print(e)
             flash(f'An error occurred: {str(e)}')
         return redirect(url_for('index'))
 
@@ -172,8 +182,9 @@ def server_error(e):
     client.report_exception(http_context=error_reporting.build_flask_context(request))
     return f"An internal error occurred: <pre>{e}</pre>", 500
 
+
 # Only used when running locally
 if __name__ == '__main__':
-    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080))) #use this but ot get key similar
 
 
